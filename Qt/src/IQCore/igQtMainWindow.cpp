@@ -25,6 +25,8 @@
 #include "Convert/iGameConvertToSurfaceMeshFilter.h"
 #include "Convert/iGameConvertToVolumeMeshFilter.h"
 
+#include "games102hw/iGameMinimalSurface.h"
+
 #include "Interactor/iGameInteractor.h"
 
 #include "Tests/iGameARAPTest.h"
@@ -1943,6 +1945,50 @@ void igQtMainWindow::initAllFilters() {
             res->SetName(data->GetName());
             modelTreeWidget->addDataObjectToModelTree(res, Algorithm);
         }
+    });
+
+    QMenu* Games102hw = ui->menu_filters->addMenu(QStringLiteral("Games102作业"));
+    QAction* minimalSurface = Games102hw->addAction(QStringLiteral("hw6 极小曲面"));
+    connect(minimalSurface, &QAction::triggered, this, [this](bool checked) {
+        auto obj = rendererWidget->GetScene()->GetCurrentModel()->GetDataObject();
+        if (obj == nullptr) return;
+        auto input = DynamicCast<SurfaceMesh>(obj);
+        if (input == nullptr) {
+            showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请先转换为表面网格。"));
+            return;
+        }
+        MinimalSurfaceFilter::Pointer filter = MinimalSurfaceFilter::New();
+        igQtFilterDialogDockWidget* dialog = new igQtFilterDialogDockWidget(this);
+        int lambda = dialog->addParameter(igQtFilterDialogDockWidget::QT_LINE_EDIT, "移动比例lambda (0..1)", "0.1");
+        int iteration_count = dialog->addParameter(igQtFilterDialogDockWidget::QT_LINE_EDIT, "迭代次数", "8");
+
+        dialog->show();
+        dialog->setApplyFunctor([=, this]() {
+            bool ok;
+            float lambdaValue = dialog->getDouble(lambda, ok);
+            if (!ok || lambdaValue >= 1 || lambdaValue <= 0) {
+                showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请输入正常范围内的参数（0到1）。"));
+                return;
+            }
+            filter->SetLambda(lambdaValue);
+            int iterationValue = dialog->getInt(iteration_count, ok);
+            if (!ok || iterationValue < 1) {
+                showDarkFramelessMessage(QStringLiteral("Warning"),
+                                         QStringLiteral("请输入正常范围内的参数（至少为1）。"));
+                return;
+            }
+            filter->SetIterationCount(iterationValue);
+
+            filter->SetInput(input);
+            if (!filter->Execute()) {
+                showDarkFramelessMessage(QStringLiteral("Warning"),
+                                         QStringLiteral("执行失败。"));
+                return;
+            }
+            auto newMesh = filter->GetOutput();
+            modelTreeWidget->addDataObjectToModelTree(newMesh, Algorithm);
+            dialog->close();
+        });
     });
 }
 
