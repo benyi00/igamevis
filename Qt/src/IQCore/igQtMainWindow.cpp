@@ -26,6 +26,7 @@
 #include "Convert/iGameConvertToVolumeMeshFilter.h"
 
 #include "games102hw/iGameMinimalSurface.h"
+#include "games102hw/iGameGlobalMinimalSurface.h"
 
 #include "Interactor/iGameInteractor.h"
 
@@ -1989,6 +1990,40 @@ void igQtMainWindow::initAllFilters() {
             modelTreeWidget->addDataObjectToModelTree(newMesh, Algorithm);
             dialog->close();
         });
+    });
+
+    QAction* globalMinimalSurface = Games102hw->addAction(QStringLiteral("hw7 global极小曲面"));
+    connect(globalMinimalSurface,&QAction::triggered,this, [this](bool checked) {
+        auto obj = rendererWidget->GetScene()->GetCurrentModel()->GetDataObject();
+        auto input = DynamicCast<SurfaceMesh>(obj);
+        if (input == nullptr) {
+            showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请先转换为表面网格。"));
+            return;
+        }
+        GlobalMinimalSurfaceFilter::Pointer filter = GlobalMinimalSurfaceFilter::New();
+
+        igQtFilterDialogDockWidget* dialog = new igQtFilterDialogDockWidget(this);
+
+        int parameterizationId = dialog->addParameter(igQtFilterDialogDockWidget::QT_CHECK_BOX, "是否参数化", "false");
+        dialog->show();
+        dialog->setApplyFunctor([=, this]() {
+            bool ok;
+            bool parameterization = dialog->getChecked(parameterizationId, ok);
+            if (!ok) {
+                showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请输入是否参数化"));
+                return;
+            }
+            filter->SetParameterization(parameterization);
+            filter->SetInput(input);
+            if (!filter->Execute()) {
+                showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("执行失败。"));
+                return;
+            }
+            auto newMesh = filter->GetOutput();
+            modelTreeWidget->addDataObjectToModelTree(newMesh, Algorithm);
+            dialog->close();
+        });
+
     });
 }
 
