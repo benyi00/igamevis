@@ -27,6 +27,7 @@
 
 #include "games102hw/iGameMinimalSurface.h"
 #include "games102hw/iGameGlobalMinimalSurface.h"
+#include "games102hw/iGameQEM.h"
 
 #include "Interactor/iGameInteractor.h"
 
@@ -2024,6 +2025,37 @@ void igQtMainWindow::initAllFilters() {
             dialog->close();
         });
 
+    });
+
+    QAction* QEM = Games102hw->addAction(QStringLiteral("hw9 QEM"));
+    connect(QEM, &QAction::triggered, this,[this](bool checked) {
+        auto obj = rendererWidget->GetScene()->GetCurrentModel()->GetDataObject();
+        auto input = DynamicCast<SurfaceMesh>(obj);
+        if (input == nullptr) {
+            showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请先转换为表面网格。"));
+            return;
+        }
+        QEMFilter::Pointer filter = QEMFilter::New();
+        igQtFilterDialogDockWidget* dialog = new igQtFilterDialogDockWidget(this);
+        int edgeCollapseNumberId = dialog->addParameter(igQtFilterDialogDockWidget::QT_LINE_EDIT, "坍缩边数量", "200");
+        dialog->show();
+        dialog->setApplyFunctor([=, this]() {
+            bool ok;
+            int edgeCollapseNumber = dialog->getInt(edgeCollapseNumberId,ok);
+            if (!ok) {
+                showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("请输入合法数字。"));
+                return;
+            }
+            filter->SetEdgeCollapseNumber(edgeCollapseNumber);
+            filter->SetInput(input);
+            if (!filter->Execute()) {
+                showDarkFramelessMessage(QStringLiteral("Warning"), QStringLiteral("执行失败。"));
+                return;
+            }
+            auto newMesh = filter->GetOutput();
+            modelTreeWidget->addDataObjectToModelTree(newMesh, Algorithm);
+            dialog->close();
+        });
     });
 }
 
