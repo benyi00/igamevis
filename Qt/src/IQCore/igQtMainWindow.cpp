@@ -4757,6 +4757,11 @@ void igQtMainWindow::initAllFilters() {
 
                 dialog->setApplyFunctor([=, this]() {
                     bool ok = false;
+                    int SimplificationMethod = dialog->getComboIndex(SimplificationMethodId, ok);
+                    if (!ok || (SimplificationMethod != 0 && SimplificationMethod != 1)) {
+                        showDarkFramelessMessage(QStringLiteral("参数错误"), QStringLiteral("请选择有效的简化方法。"));
+                        return;
+                    }
                     float TargetReduction = dialog->getDouble(TargetReductionId, ok);
                     if (!ok) {
                         showDarkFramelessMessage(QStringLiteral("参数错误"),
@@ -4784,9 +4789,8 @@ void igQtMainWindow::initAllFilters() {
 
                     auto obj = rendererWidget->GetScene()->GetCurrentModel()->GetDataObject();
                     if (!obj) return;
-                    if (SimplificationMethodId == 0) { //选择四面体塌缩
+                    if (SimplificationMethod == 0) { //选择四面体塌缩
                         auto filter = TetraSimplification::New();
-                        filter->SetInput(tetInput);
                         filter->SetTargetReduction(TargetReduction);
                         filter->SetTargetTetraCount(TargetTetraCount);
                         filter->SetPreserveBoundary(PreserveBoundary);
@@ -4808,13 +4812,12 @@ void igQtMainWindow::initAllFilters() {
                         dialog->close();
                     } else { //选择边塌缩
                         auto filter = TetraEdgeSimplification::New();
-                        filter->SetInput(obj);
                         filter->SetTargetReduction(TargetReduction);
                         filter->SetTargetTetraCount(TargetTetraCount);
                         filter->SetPreserveBoundary(PreserveBoundary);
                         filter->SetUseAllPointAttributes(UseAllPointAttributes);
 
-                        filter->SetInput(obj);
+                        filter->SetInput(tetInput);
                         if (!filter->Execute()) {
                             showDarkFramelessMessage(QStringLiteral("执行失败"),
                                                      QStringLiteral("当前数据不支持该算法。"));
