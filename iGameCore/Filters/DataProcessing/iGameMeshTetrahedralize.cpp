@@ -120,6 +120,62 @@ inline int GetCellToPolyhedronPointIds(UnstructuredMesh::Pointer input, IGsize c
     return count;
 }
 
+bool isConvexPolyhedron(Volume::Pointer input,std::string& reason) {
+    if (!input || input->GetNumberOfFaces() < 4 || input->GetNumberOfPoints() < 4) { return false; }
+    int numFaces = input->GetNumberOfFaces();
+    int numPoints = input->GetNumberOfPoints();
+    std::vector<Point> cellPoints{}; //收集这个单元的所有点
+    for (int i = 0; i < numPoints; i++) {
+        cellPoints.push_back(input->GetPoint(i));
+    }
+    for (int i = 0; i < numFaces; i++) {
+        auto face = dynamic_cast<Face*>(input->GetFace(i));
+        if (!face || face->GetNumberOfPoints() < 3) {
+            reason = "单元存在点数小于3的面。";
+            return false;
+        }
+        Vector3d normal(0.0, 0.0, 0.0);//计算法线
+        const int count = face->GetNumberOfPoints();
+        const Vector3d origin = ToVector3d(face->GetPoint(0));
+
+        for (int j = 1; j + 1 < count; ++j) {
+            Vector3d a = ToVector3d(face->GetPoint(j)) - origin;
+            Vector3d b = ToVector3d(face->GetPoint(j + 1)) - origin;
+            normal += a.cross(b);
+        }
+        auto length = normal.length();
+        if (!std::isfinite(length) || length == 0.0) {
+            reason = "单元存在退化面或无效法线，无法确认凸性。";
+            return false;
+        }
+        normal /= length;
+        const double eps = 1e-8;
+        bool flag_p0;
+        bool firstPoint = true;
+        auto p0 = face->GetPoint(0);
+        for (auto p: cellPoints) {//看看是否所有点都在面的同一边
+            auto result = normal.dot(p - p0);
+            if (!std::isfinite(result)) { 
+                reason = "单元存在异常法线";
+                return false;
+            }
+            if (result > -eps && result < eps) continue;//几乎就在面上，就认为点在面上
+            bool flag = result > 0;
+            if (firstPoint) {
+                flag_p0 = flag;
+                firstPoint = false;
+            } else {
+                if (flag != flag_p0) {
+                    reason = "单元未通过凸性检查：顶点分布在某个面的两侧。";
+                    return false;//不是凸多面体
+                }
+            }
+        }
+        if (firstPoint) return false;//整个多面体的所有点都在面上
+    }
+    return true;//所有面都通过，才是凸多面体
+}
+
 inline bool IsTetLikePolyhedron(
         UnstructuredMesh::Pointer input,IGsize ci,std::vector<std::set<int>> &points) { //判断某个Cell是否是四面体形状的Polyhedron，如果是就把原先的Cell直接当成四面体
     auto cell = input->GetCell(ci);
@@ -147,6 +203,7 @@ struct NewPointSource {
 
 bool MeshTetrahedralize::Execute() 
 { 
+    m_failReason.clear();
     auto obj = GetInput(0);
     if (!obj) return false;
 
@@ -228,6 +285,12 @@ bool MeshTetrahedralize::Execute()
     for (size_t i = 0; i < passthroughTetOriginCells.size(); i++) {//加入:不用处理的四面体
         igIndex tetIds[IGAME_CELL_MAX_SIZE]{};
         igIndex cellId = passthroughTetOriginCells[i];
+        auto volume = dynamic_cast<Volume*>(input->GetCell(cellId));
+        std::string reason = "";
+        if (!volume || !isConvexPolyhedron(volume,reason)) {
+            m_failReason = reason;
+            return false;
+        }
         const int count = input->GetCellPointIds(cellId, tetIds);
         if (count != 4) return false;
         outCells->AddCellId4(tetIds[0], tetIds[1], tetIds[2], tetIds[3]);
@@ -237,6 +300,12 @@ bool MeshTetrahedralize::Execute()
     for (size_t i = 0; i < passthroughTetLikePolys.size(); i++) {//加入:四面体形状的多面体
         igIndex tetIds[IGAME_CELL_MAX_SIZE]{};
         igIndex cellId = passthroughTetLikePolys[i];
+        auto volume = dynamic_cast<Volume*>(input->GetCell(cellId));
+        std::string reason = "";
+        if (!volume || !isConvexPolyhedron(volume, reason)) {
+            m_failReason = reason;
+            return false;
+        }
         std::set<int> cellPoints = tetLikePolysPoints[i];
         int points[4]{};
         int p = 0;
@@ -290,14 +359,20 @@ bool MeshTetrahedralize::Execute()
     }
 
     const IGsize nPolyCells = static_cast<IGsize>(polyCellIds.size());
-    for (IGsize vi = 0; vi < nPolyCells; ++vi) {
+    for (IGsize vi = 0; vi < nPolyCells; ++vi) {// 遍历每个多面体，准备拆成四面体。
         const igIndex srcCellId = polyCellIds[static_cast<size_t>(vi)];
         igIndex cellVerts[IGAME_CELL_MAX_SIZE]{};
         const int nCellVerts = mesh->GetVolumePointIds(vi, cellVerts);
         if (nCellVerts < 4) {
             continue;
         }
-
+        auto volume = mesh->GetVolume(vi);
+        std::string reason = "";
+        bool isConvex = isConvexPolyhedron(volume,reason);
+        if (!isConvex) {
+            m_failReason = reason;
+            return false;
+        }
         Vector3d cc(0.0, 0.0, 0.0);
         for (int i = 0; i < nCellVerts; ++i) {
             cc += ToVector3d(input->GetPoint(cellVerts[i]));

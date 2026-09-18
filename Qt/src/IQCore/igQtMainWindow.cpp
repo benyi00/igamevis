@@ -4843,7 +4843,8 @@ void igQtMainWindow::initAllFilters() {
                 auto filter = MeshTetrahedralize::New();
                 filter->SetInput(obj);
                 if (!filter->Execute()) {
-                    showDarkFramelessMessage(QStringLiteral("执行失败"), QStringLiteral("当前数据不支持四面体化。"));
+                    std::string reason = filter->m_failReason;
+                    showDarkFramelessMessage(QStringLiteral("执行失败"), QStringLiteral("当前数据不支持四面体化。") +QString::fromStdString(reason));
                     return;
                 }
                 auto output = filter->GetOutput();
