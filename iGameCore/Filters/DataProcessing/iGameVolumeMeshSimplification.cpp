@@ -21,6 +21,32 @@ static inline void Sort3i(int& a, int& b, int& c) {
     if (a > b) std::swap(a, b);
 }
 
+namespace
+{
+template<typename ArrayType, typename AttrInfoType>
+typename ArrayType::Pointer BuildPointAttribute(AttrInfoType info, AttributeSet::Pointer& outAttrs, int col,
+                         int N, int newN, std::vector<uint8_t>& m_VertAlive, std::vector<int> old2new, std::vector<double> m_Attrs,int D) {
+    typename ArrayType::Pointer arr = ArrayType::New();
+    arr->SetDimension(info.ncomp);
+    arr->Resize(newN);
+    arr->SetName(info.name);
+    for (int i = 0; i < N; ++i) {
+        if (!m_VertAlive[i]) continue;
+
+        int ni = old2new[i];
+
+        for (int d = 0; d < info.ncomp; ++d) { arr->SetValue(ni * info.ncomp + d, m_Attrs[i * D + col + d]); }
+    }
+    return arr;
+}
+
+template <typename ArrayType>
+void CopyCellAttribute() {
+
+}
+
+}
+
 // ════════════════════════════════════════════════════════════════
 //  Execute
 // ════════════════════════════════════════════════════════════════
@@ -97,7 +123,9 @@ bool TetraSimplification::LoadMesh() {
                 if (static_cast<int>(ai) != curIdx) continue;
             }
             int dim = a.pointer->GetDimension();
-            m_AttrInfo.push_back({a.pointer->GetName(), dim});
+            auto arrayType = a.pointer->GetArrayType();
+            auto attributeType = a.type;
+            m_AttrInfo.push_back({a.pointer->GetName(), dim, arrayType,attributeType});
             totalDim += dim;
         }
     }
@@ -810,20 +838,55 @@ bool TetraSimplification::SaveMesh() {
         auto outAttrs = AttributeSet::New();
         int col = 0;
         for (const auto& info : m_AttrInfo) {
-            auto arr = FloatArray::New();
-            arr->SetDimension(info.ncomp);
-            arr->Resize(newN);
-            arr->SetName(info.name);
-            for (int i = 0; i < N; ++i) {
-                if (!m_VertAlive[i]) continue;
-                int ni = old2new[i];
-                for (int d = 0; d < info.ncomp; ++d) {
-                    arr->SetValue(ni * info.ncomp + d,
-                                  static_cast<float>(m_Attrs[i*D + col + d]));
-                }
-            }
-            outAttrs->AddAttribute(info.ncomp == 1 ? IG_SCALAR : IG_VECTOR, IG_POINT, arr);
+            ArrayObject::Pointer arr = nullptr;
+            const int attrCol = col;
             col += info.ncomp;
+            switch (info.arrayType) {
+                case IG_FloatArray:
+                    arr = BuildPointAttribute<FloatArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_DoubleArray:
+                    arr = BuildPointAttribute<DoubleArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_IntArray:
+                    arr = BuildPointAttribute<IntArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_UnsignedIntArray:
+                    arr = BuildPointAttribute<UnsignedIntArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_ShortArray:
+                    arr = BuildPointAttribute<ShortArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_UnsignedShortArray:
+                    arr = BuildPointAttribute<UnsignedShortArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_LongLongArray:
+                    arr = BuildPointAttribute<LongLongArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs,D);
+                    break;
+
+                case IG_UnsignedLongLongArray:
+                    arr = BuildPointAttribute<UnsignedLongLongArray, TetraSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                default:
+                    break;
+            }
+            if (arr) { outAttrs->AddAttribute(info.attributeType, IG_POINT, arr); }
+
         }
         outMesh->SetAttributeSet(outAttrs);
     }
