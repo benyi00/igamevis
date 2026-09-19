@@ -199,6 +199,62 @@ struct NewPointSource {
     std::vector<igIndex> srcPointIds;
 };
 
+template<typename ArrayType>
+ArrayObject::Pointer CopyAttribute(AttributeSet::Attribute& attr, const ArrayObject::Pointer& inArray,
+                                   AttributeSet::Pointer outData, igIndex inPointNum, igIndex outPointNum,
+                                   igIndex outCellNum, const std::vector<NewPointSource>& newPointSources,
+                                   const std::vector<igIndex>& originCells, double values[], double tmp[]) {
+    auto outArray = ArrayType::New();
+    outArray->SetName(inArray->GetName());
+    outArray->SetDimension(inArray->GetDimension());
+    const int dim = inArray->GetDimension();
+
+    if (attr.attachmentType == IG_POINT) {
+        outArray->Resize(outPointNum);
+
+        const igIndex copyPointNum =
+                std::min<igIndex>(inPointNum, static_cast<igIndex>(inArray->GetNumberOfElements()));
+        for (igIndex pid = 0; pid < copyPointNum; ++pid) {
+            inArray->GetElement(pid, values);
+            outArray->SetElement(pid, values);
+        }
+
+        for (const auto& np: newPointSources) {
+            if (np.outPointId < 0 || np.outPointId >= outPointNum) continue;
+            const igIndex cnt = static_cast<igIndex>(np.srcPointIds.size());
+            if (cnt <= 0) continue;
+
+            for (int k = 0; k < dim; ++k) { values[k] = 0.0; }
+            igIndex usedCount = 0;
+            for (igIndex s = 0; s < cnt; ++s) {
+                const igIndex srcId = np.srcPointIds[static_cast<size_t>(s)];
+                if (srcId < 0 || srcId >= copyPointNum) continue;
+                inArray->GetElement(srcId, tmp);
+                for (int k = 0; k < dim; ++k) { values[k] += tmp[k]; }
+                ++usedCount;
+            }
+            if (usedCount <= 0) continue;
+            const double inv = 1.0 / static_cast<double>(usedCount);
+            for (int k = 0; k < dim; ++k) { values[k] *= inv; }
+            outArray->SetElement(np.outPointId, values);
+        }
+
+        outData->AddAttribute(attr.type, attr.attachmentType, outArray, attr.GetDataRange());
+    } else if (attr.attachmentType == IG_CELL) {
+        outArray->Resize(outCellNum);
+        const igIndex copyCellNum = std::min<igIndex>(outCellNum, static_cast<igIndex>(originCells.size()));
+        for (igIndex cid = 0; cid < copyCellNum; ++cid) {
+            const igIndex srcCell = originCells[static_cast<size_t>(cid)];
+            inArray->GetElement(srcCell, values);
+            outArray->SetElement(cid, values);
+        }
+        outData->AddAttribute(attr.type, attr.attachmentType, outArray, attr.GetDataRange());
+    } else {
+        outData->AddAttribute(attr.type, attr.attachmentType, inArray, attr.GetDataRange());
+    }
+    return outArray;
+}
+
 } // namespace
 
 bool MeshTetrahedralize::Execute() 
@@ -425,65 +481,61 @@ bool MeshTetrahedralize::Execute()
             double tmp[IGAME_CELL_MAX_SIZE]{};
 
             for (IGsize ai = 0; ai < inAllAttr->GetNumberOfElements(); ++ai) {
-                auto attr = inAllAttr->GetElement(ai);
+                auto &attr = inAllAttr->GetElement(ai);
                 auto inArray = attr.pointer;
                 if (!inArray) continue;
-
-                auto outArray = FloatArray::New();
-                outArray->SetName(inArray->GetName());
-                outArray->SetDimension(inArray->GetDimension());
-                const int dim = inArray->GetDimension();
-
-                if (attr.attachmentType == IG_POINT) {
-                    outArray->Resize(outPointNum);
-
-                    const igIndex copyPointNum =
-                        std::min<igIndex>(inPointNum, static_cast<igIndex>(inArray->GetNumberOfElements()));
-                    for (igIndex pid = 0; pid < copyPointNum; ++pid) {
-                        inArray->GetElement(pid, values);
-                        outArray->SetElement(pid, values);
+                switch (inArray->GetArrayType()) {
+                    case IG_FloatArray: {
+                        CopyAttribute<FloatArray>(attr,inArray,outData,inPointNum,outPointNum,outCellNum,newPointSources,originCells,values,tmp);
+                        break;
+                    }
+                    case IG_IntArray: {
+                        CopyAttribute<IntArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_DoubleArray: {
+                        CopyAttribute<DoubleArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                   newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_UnsignedIntArray: {
+                        CopyAttribute<UnsignedIntArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                        newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_CharArray: {
+                        CopyAttribute<CharArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                 newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_UnsignedCharArray: {
+                        CopyAttribute<UnsignedCharArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                         newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_ShortArray: {
+                        CopyAttribute<ShortArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                  newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_UnsignedShortArray: {
+                        CopyAttribute<UnsignedShortArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                          newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_LongLongArray: {
+                        CopyAttribute<LongLongArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum,
+                                                     newPointSources, originCells, values, tmp);
+                        break;
+                    }
+                    case IG_UnsignedLongLongArray: {
+                        CopyAttribute<UnsignedLongLongArray>(attr, inArray, outData, inPointNum, outPointNum, outCellNum, newPointSources, originCells, values, tmp);
+                        break;
                     }
 
-                    for (const auto& np : newPointSources) {
-                        if (np.outPointId < 0 || np.outPointId >= outPointNum) continue;
-                        const igIndex cnt = static_cast<igIndex>(np.srcPointIds.size());
-                        if (cnt <= 0) continue;
-
-                        for (int k = 0; k < dim; ++k) {
-                            values[k] = 0.0;
-                        }
-                        igIndex usedCount = 0;
-                        for (igIndex s = 0; s < cnt; ++s) {
-                            const igIndex srcId = np.srcPointIds[static_cast<size_t>(s)];
-                            if (srcId < 0 || srcId >= copyPointNum) continue;
-                            inArray->GetElement(srcId, tmp);
-                            for (int k = 0; k < dim; ++k) {
-                                values[k] += tmp[k];
-                            }
-                            ++usedCount;
-                        }
-                        if (usedCount <= 0) continue;
-                        const double inv = 1.0 / static_cast<double>(usedCount);
-                        for (int k = 0; k < dim; ++k) {
-                            values[k] *= inv;
-                        }
-                        outArray->SetElement(np.outPointId, values);
-                    }
-
-                    outData->AddAttribute(attr.type, attr.attachmentType, outArray, attr.GetDataRange());
-                } else if (attr.attachmentType == IG_CELL) {
-                    outArray->Resize(outCellNum);
-                    const igIndex copyCellNum =
-                        std::min<igIndex>(outCellNum, static_cast<igIndex>(originCells.size()));
-                    for (igIndex cid = 0; cid < copyCellNum; ++cid) {
-                        const igIndex srcCell = originCells[static_cast<size_t>(cid)];
-                        inArray->GetElement(srcCell, values);
-                        outArray->SetElement(cid, values);
-                    }
-                    outData->AddAttribute(attr.type, attr.attachmentType, outArray, attr.GetDataRange());
-                } else {
-                    outData->AddAttribute(attr.type, attr.attachmentType, inArray, attr.GetDataRange());
                 }
+                
             }
         }
     }
