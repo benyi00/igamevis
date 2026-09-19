@@ -114,6 +114,7 @@ private:
         IGenum attachmentType;
     };
     std::vector<AttrInfo> m_AttrInfo;
+    std::vector<igIndex> m_TetSourceIds{};
 
     // ─── Normalization ───
     double m_PtsMin[3] = {0,0,0};
@@ -246,6 +247,7 @@ private:
         IGenum attachmentType;
     };
     std::vector<AttrInfo> m_AttrInfo;
+    std::vector<igIndex> m_TetSourceIds{};
 
     // ─── Normalization ───
     double m_PtsMin[3] = {0,0,0};
