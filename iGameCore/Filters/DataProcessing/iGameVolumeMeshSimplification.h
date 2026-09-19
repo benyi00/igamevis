@@ -111,6 +111,7 @@ private:
         int ncomp;
         IGenum arrayType;
         IGenum attributeType;
+        IGenum attachmentType;
     };
     std::vector<AttrInfo> m_AttrInfo;
 
@@ -242,6 +243,7 @@ private:
         int ncomp;
         IGenum arrayType;
         IGenum attributeType;
+        IGenum attachmentType;
     };
     std::vector<AttrInfo> m_AttrInfo;
 

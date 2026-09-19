@@ -117,7 +117,6 @@ bool TetraSimplification::LoadMesh() {
         for (IGsize ai = 0; ai < all->GetNumberOfElements(); ++ai) {
             auto a = all->GetElement(ai);
             if (a.isDeleted || !a.pointer) continue;
-            if (a.attachmentType != IG_POINT) continue;
             if (!m_UseAllPointAttributes) {
                 int curIdx = m_InputMesh->GetCurrentAttributeIndex();
                 if (static_cast<int>(ai) != curIdx) continue;
@@ -125,7 +124,8 @@ bool TetraSimplification::LoadMesh() {
             int dim = a.pointer->GetDimension();
             auto arrayType = a.pointer->GetArrayType();
             auto attributeType = a.type;
-            m_AttrInfo.push_back({a.pointer->GetName(), dim, arrayType,attributeType});
+            auto attachmentType = a.attachmentType;
+            m_AttrInfo.push_back({a.pointer->GetName(), dim, arrayType,attributeType,attachmentType});
             totalDim += dim;
         }
     }
@@ -967,7 +967,10 @@ bool TetraEdgeSimplification::LoadMesh() {
                 if (static_cast<int>(ai) != m_InputMesh->GetCurrentAttributeIndex()) continue;
             }
             int dim = a.pointer->GetDimension();
-            m_AttrInfo.push_back({a.pointer->GetName(), dim});
+            auto arrayType = a.pointer->GetArrayType();
+            auto attributeType = a.type;
+            auto attachmentType = a.attachmentType;
+            m_AttrInfo.push_back({a.pointer->GetName(), dim, arrayType, attributeType, attachmentType});
             totalDim += dim;
         }
     }
@@ -1468,19 +1471,55 @@ bool TetraEdgeSimplification::SaveMesh() {
         }
         auto outAttrs = AttributeSet::New();
         int col = 0;
-        for (const auto& info : m_AttrInfo) {
-            auto arr = FloatArray::New();
-            arr->SetDimension(info.ncomp);
-            arr->Resize(newN);
-            arr->SetName(info.name);
-            for (int i = 0; i < N; ++i) {
-                if (!m_VertAlive[i]) continue;
-                int ni = old2new[i];
-                for (int d = 0; d < info.ncomp; ++d)
-                    arr->SetValue(ni*info.ncomp+d, static_cast<float>(m_Attrs[i*D+col+d]));
-            }
-            outAttrs->AddAttribute(info.ncomp==1 ? IG_SCALAR : IG_VECTOR, IG_POINT, arr);
+        for (const auto& info: m_AttrInfo) {
+            ArrayObject::Pointer arr = nullptr;
+            const int attrCol = col;
             col += info.ncomp;
+            switch (info.arrayType) {
+                case IG_FloatArray:
+                    arr = BuildPointAttribute<FloatArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_DoubleArray:
+                    arr = BuildPointAttribute<DoubleArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_IntArray:
+                    arr = BuildPointAttribute<IntArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_UnsignedIntArray:
+                    arr = BuildPointAttribute<UnsignedIntArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_ShortArray:
+                    arr = BuildPointAttribute<ShortArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_UnsignedShortArray:
+                    arr = BuildPointAttribute<UnsignedShortArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_LongLongArray:
+                    arr = BuildPointAttribute<LongLongArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                case IG_UnsignedLongLongArray:
+                    arr = BuildPointAttribute<UnsignedLongLongArray, TetraEdgeSimplification::AttrInfo>(
+                            info, outAttrs, attrCol, N, newN, m_VertAlive, old2new, m_Attrs, D);
+                    break;
+
+                default:
+                    break;
+            }
+            if (arr) { outAttrs->AddAttribute(info.attributeType, IG_POINT, arr); }
         }
         outMesh->SetAttributeSet(outAttrs);
     }
