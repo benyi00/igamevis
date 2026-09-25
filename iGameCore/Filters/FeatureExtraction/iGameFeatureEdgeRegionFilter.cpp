@@ -1,4 +1,5 @@
 #include "iGameFeatureEdgeRegionFilter.h"
+#include <cmath>
 #include <vector>
 #include <unordered_set>
 #include <utility>
@@ -7,6 +8,42 @@
 
 IGAME_NAMESPACE_BEGIN
 namespace{
+    constexpr double NORMAL_EPSILON = 1e-12;
+
+    // 使用 Newell 方法计算面的单位法向量，支持三角形、四边形和一般多边形。
+    // 法向方向由面顶点的绕序决定；非法面或退化面返回零向量。
+    Vector3f getNormal(const SurfaceMesh::Pointer& mesh, igIndex faceId) {
+        if (mesh == nullptr || faceId < 0 || faceId >= mesh->GetNumberOfFaces()) {
+            return Vector3f(0.0f, 0.0f, 0.0f);
+        }
+
+        igIndex pointIds[IGAME_CELL_MAX_SIZE]{};
+        const int numberOfPoints = mesh->GetFacePointIds(faceId, pointIds);
+        if (numberOfPoints < 3) { return Vector3f(0.0f, 0.0f, 0.0f); }
+
+        double nx = 0.0;
+        double ny = 0.0;
+        double nz = 0.0;
+
+        for (int i = 0; i < numberOfPoints; ++i) {
+            const Point& current = mesh->GetPoint(pointIds[i]);
+            const Point& next = mesh->GetPoint(pointIds[(i + 1) % numberOfPoints]);
+
+            nx += static_cast<double>(current[1] - next[1]) *
+                    static_cast<double>(current[2] + next[2]);
+            ny += static_cast<double>(current[2] - next[2]) *
+                    static_cast<double>(current[0] + next[0]);
+            nz += static_cast<double>(current[0] - next[0]) *
+                    static_cast<double>(current[1] + next[1]);
+        }
+
+        const double length = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (length <= NORMAL_EPSILON) { return Vector3f(0.0f, 0.0f, 0.0f); }
+
+        return Vector3f(static_cast<float>(nx / length), static_cast<float>(ny / length),
+                        static_cast<float>(nz / length));
+    }
+
     class UnionFind {
     public:
         std::vector<int> parent;
@@ -48,7 +85,7 @@ bool FeatureEdgeRegionFilter::Execute() {
     points->DeepCopy(inputMesh->GetPoints());
     mesh->SetPoints(points);
     auto faces = CellArray::New();
-    faces->GetOffset()->Reset(); // �������ʱԤ�õ� 0
+    faces->GetOffset()->Reset(); // 清除构造时预置的 0
     if (!faces->DeepCopy(inputMesh->GetFaces())) { return false; }
     faces->DeepCopy(inputMesh->GetFaces());
     mesh->SetFaces(faces);
@@ -62,63 +99,34 @@ bool FeatureEdgeRegionFilter::Execute() {
     mesh->BuildEdges();
     mesh->BuildEdgeLinks();
     mesh->BuildFaceEdgeLinks();
-
-    auto featureObj = GetInput(1);
-    if (featureObj == nullptr) {
-        std::cerr << "Failed to get featrue obj" << std::endl;
-        return false;
-    }
-    auto featureMesh = DynamicCast<UnstructuredMesh>(featureObj);
-    if (featureMesh == nullptr) {
-        std::cerr << "Failed to get featrue mesh" << std::endl;
-        return false;
-    }
-   auto featureCells = featureMesh->GetCells();
-    if (featureCells == nullptr) {
-        std::cerr << "Failed to get featrue cells" << std::endl;
-        return false;
-    }
-
-    //std::set<std::pair<igIndex,igIndex>> featureEdgePointPairs;
-    //igIndex linePts[2]{};
-    //for (int lineId = 0; lineId < featureCells->GetNumberOfCells(); ++lineId) {//traverse every edge in feature Mesh.Each cell is a line with two points
-    //    int count = featureCells->GetCellIds(lineId, linePts);
-    //    if (count != 2) continue;
-    //    igIndex edgeId = mesh->GetEdgeIdFormPointIds(linePts[0], linePts[1]);//make sure the edge exist in origin mesh
-    //    if (edgeId != -1) { 
-    //        igIndex pt1 = std::min(linePts[0], linePts[1]);
-    //        igIndex pt2 = std::max(linePts[0], linePts[1]);
-    //        featureEdgePointPairs.insert(std::pair<igIndex, igIndex>(pt1,pt2)); }
-    //}
-
-    auto edgeIdAttribute = featureMesh->GetAttributeSet()->GetAttribute("Edge Ids");
-
-    UnsignedIntArray::Pointer edgeIdArray = UnsignedIntArray::New();
-
-    if (!edgeIdAttribute.IsNone()) { 
-        edgeIdArray = DynamicCast<UnsignedIntArray>(edgeIdAttribute.pointer);
-    }
-
-    if (edgeIdArray == nullptr) {
-        edgeIdArray = UnsignedIntArray::New();
-    }
-
-    std::unordered_set<igIndex> featureEdgeIds;
-    for (int lineId = 0; lineId < featureCells->GetNumberOfCells(); lineId++) {//traverse every feature edge in feature Mesh.
-        featureEdgeIds.insert(edgeIdArray->GetValue(lineId));
-    }
+    mesh->BuildFaceLinks();
 
     const int numFaces = mesh->GetNumberOfFaces();
     UnionFind myUnion(numFaces);
 
     const int numEdges = mesh->GetNumberOfEdges();
+    const int numPoints = mesh->GetNumberOfPoints();
 
-    for (int edgeId = 0; edgeId < numEdges; edgeId++) {
-        if (featureEdgeIds.count(edgeId)) continue; //continue if the edge is feature edge
-        //union if the edge is not feature edge
+    std::vector<Vector3f> normals{};
+    for (int faceId = 0; faceId < numFaces; faceId++) normals.push_back(getNormal(mesh, faceId));
+
+    for (int pointId = 0; pointId < numPoints; pointId++) {
         igIndex faceIds[IGAME_CELL_MAX_SIZE]{};
-        int faceCount = mesh->GetEdgeToNeighborFaces(edgeId, faceIds);
-        if (faceCount==2)myUnion.Union(faceIds[0], faceIds[1]); //union neighbor faces
+        int numNeightborFace = mesh->GetPointToNeighborFaces(pointId,faceIds);
+        if (numNeightborFace <= 1) continue;
+        for (int i = 0; i < numNeightborFace; i++) {//两两比较
+            for (int j = i + 1; j < numNeightborFace; j++) {
+                int id1 = faceIds[i];
+                int id2 = faceIds[j];
+                if (myUnion.FindParent(id1) == myUnion.FindParent(id2)) continue;//已经在同一个集合中了
+                const auto normal1 = normals[id1];
+                const auto normal2 = normals[id2];
+                float dot = normal1.dot(normal2);
+                if (dot > cos(m_featureAngle/180*M_PI)) {
+                    myUnion.Union(id1, id2);
+                }
+            }
+        }
     }
 
     //realign the region IDs
