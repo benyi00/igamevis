@@ -4681,7 +4681,7 @@ void igQtMainWindow::initAllFilters() {
         }
         dialog->setFilterTitle(QStringLiteral("特征区域id"));
         int angleId =
-                dialog->addParameter(igQtFilterDialogDockWidget ::QT_LINE_EDIT, QStringLiteral("特征角度"), "30.0");
+                dialog->addParameter(igQtFilterDialogDockWidget ::QT_LINE_EDIT, QStringLiteral("Maximum Angle"), "30.0");
         dialog->show();
         dialog->setApplyFunctor([=, this]() {
             bool ok;
