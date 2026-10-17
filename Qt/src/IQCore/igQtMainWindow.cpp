@@ -1766,6 +1766,7 @@ void igQtMainWindow::showDarkFramelessMessage(const QString& title, const QStrin
 }
 
 void igQtMainWindow::initAllFilters() {
+    initGames102Homework();
     /* Data Processing 前两档：加宽以容纳较长参数标签，并关闭参数区滚动条（内容较少无需滚动） */
     auto tuneMeshSimplifyFilterDialog = [](igQtFilterDialogDockWidget* d) {
         constexpr int kDialogWidth = 360;

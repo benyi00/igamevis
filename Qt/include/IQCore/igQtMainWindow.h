@@ -93,6 +93,7 @@ public:
     void initAllDockWidgetConnectWithAction();
     void initAllMySignalConnections();
     void initAllFilters();
+    void initGames102Homework();
     bool connectImportedFilterAction(QAction* action, const QString& filterId);
     bool connectThirdBatchFilterAction(QAction* action, const QString& filterId);
     void initAllSources();
